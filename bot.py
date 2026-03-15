@@ -12,74 +12,62 @@ client = OpenAI(api_key=OPENAI_KEY)
 SEND_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
 SCAN_INTERVAL = 120
-PAIR_LIMIT = 35
+PAIR_LIMIT = 40
 CONF_FILTER = 75
 COOLDOWN = 3600
 
 last_signal = {}
 
-# ================= MARKET DATA =================
+# ================= OKX MARKET DATA =================
 
 def get_pairs():
     try:
-        url = "https://api.binance.com/api/v3/ticker/24hr"
+        url = "https://www.okx.com/api/v5/market/tickers?instType=SPOT"
         r = requests.get(url, timeout=10)
-
-        if r.status_code != 200:
-            print("BINANCE API ERROR")
-            return []
 
         data = r.json()
 
-        if not isinstance(data, list):
-            print("BINANCE FORMAT ERROR")
+        if data.get("code") != "0":
+            print("OKX ERROR")
             return []
 
-        pairs = [
-            x for x in data
-            if isinstance(x, dict)
-            and "USDT" in x.get("symbol", "")
-            and float(x.get("quoteVolume", 0)) > 10000000
-        ]
+        tickers = data.get("data", [])
 
-        pairs = sorted(
-            pairs,
-            key=lambda x: float(x.get("quoteVolume", 0)),
-            reverse=True
-        )
+        usdt = [x for x in tickers if "-USDT" in x["instId"]]
 
-        return pairs[:PAIR_LIMIT]
+        usdt = sorted(usdt, key=lambda x: float(x["volCcy24h"]), reverse=True)
+
+        return usdt[:PAIR_LIMIT]
 
     except Exception as e:
-        print("PAIR ERROR:", e)
+        print("OKX FETCH ERROR:", e)
         return []
 
 # ================= AI ANALYSIS =================
 
-def analyze_gpt(symbol, price, change, volume):
+def analyze_ai(symbol, price, change, volume):
 
     prompt = f"""
 You are elite crypto intraday trader.
 
-Market data:
+Market:
 Pair: {symbol}
 Price: {price}
 24h Change: {change}
 Volume: {volume}
 
-Decide best trade.
+Decide trade.
 
-Answer STRICT format:
-LONG or SHORT or NO TRADE | confidence_number | short_reason
+Format STRICT:
+LONG or SHORT or NO TRADE | confidence | reason
 """
 
     try:
         r = client.chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role":"user","content":prompt}],
             temperature=0.2
         )
-
         return r.choices[0].message.content
 
     except Exception as e:
@@ -101,8 +89,8 @@ def send_signal(symbol, side, entry, conf, reason):
         tp2 = entry * 0.96
         tp3 = entry * 0.93
 
-    msg = f"""
-🤖 AI SMART SIGNAL
+    text = f"""
+🤖 AI SIGNAL
 
 Pair : {symbol}
 Side : {side}
@@ -119,10 +107,7 @@ Confidence : {conf}%
 Reason : {reason}
 """
 
-    try:
-        requests.post(SEND_URL, data={"chat_id": CHAT_ID, "text": msg})
-    except:
-        print("TELEGRAM ERROR")
+    requests.post(SEND_URL, data={"chat_id":CHAT_ID,"text":text})
 
 # ================= MAIN LOOP =================
 
@@ -132,12 +117,12 @@ while True:
 
         for p in pairs:
 
-            symbol = p["symbol"]
-            price = float(p["lastPrice"])
-            change = p["priceChangePercent"]
-            volume = p["quoteVolume"]
+            symbol = p["instId"]
+            price = float(p["last"])
+            change = p["sodUtc0"]
+            volume = p["volCcy24h"]
 
-            ai = analyze_gpt(symbol, price, change, volume)
+            ai = analyze_ai(symbol, price, change, volume)
 
             if not ai:
                 continue
@@ -165,7 +150,7 @@ while True:
                     send_signal(symbol, side, price, conf, reason)
                     last_signal[symbol] = now
 
-                    print("AI SIGNAL:", symbol)
+                    print("AI OKX SIGNAL:", symbol)
 
         time.sleep(SCAN_INTERVAL)
 
