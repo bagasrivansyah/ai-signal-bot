@@ -176,6 +176,6 @@ Adaptive smart money model active ⚡
         hist["streak"]+=1
 
     save_history(hist)
-
-    print(f"[LOOP] Found {len(sigs)} signal", file=sys.stderr)
+    
+    print(f"[LOOP] Found {len(sigs)} signals", file=sys.stderr)
     time.sleep(60)
