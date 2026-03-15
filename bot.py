@@ -124,25 +124,28 @@ def send_signal(symbol, side, entry, change, vol):
         tp2 = entry * 0.96
 
     msg = f"""
-💀 BINGX ROLLING SNIPER
+TEST SIGNAL
 
 Pair : {symbol}
 Side : {side}
-
-Entry : {entry:.4f}
-
-TP1 : {tp1:.4f}
-TP2 : {tp2:.4f}
-SL : {sl:.4f}
-
-Move : {change:.2f}%
-Volume Spike : {vol:.2f}x
+Entry : {entry}
 """
 
     try:
-        requests.post(SEND_URL, data={"chat_id": CHAT_ID, "text": msg})
-    except:
-        print("telegram error")
+        r = requests.post(
+            SEND_URL,
+            json={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
+            timeout=15
+        )
+
+        print("TELEGRAM STATUS:", r.status_code)
+        print("TELEGRAM RESP:", r.text)
+
+    except Exception as e:
+        print("TELEGRAM ERROR:", e)
 
 # ================= MAIN =================
 
