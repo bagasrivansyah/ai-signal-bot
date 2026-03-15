@@ -1,181 +1,120 @@
 import requests
 import time
-import statistics
-import json
 import os
-import sys
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHANNEL = os.getenv("TELEGRAM_CHANNEL")
+from openai import OpenAI
 
-if not TOKEN or not CHANNEL:
-    print(f"ERROR: TOKEN missing or CHANNEL missing", file=sys.stderr)
-    sys.exit(1)
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+OPENAI_KEY = os.getenv("OPENAI_KEY")
 
-print(f"[START] Bot initialized", file=sys.stderr)
+client = OpenAI(api_key=OPENAI_KEY)
 
-MIN_VOL = 1500000
-MAX_SIGNAL = 3
-LOSS_STREAK_LIMIT = 4
+SEND_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-history_file = "trade_history.json"
+SCAN_INTERVAL = 120
+PAIR_LIMIT = 40
+CONF_FILTER = 75
 
-def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHANNEL, "text": msg})
+last_signal = {}
 
-def load_history():
-    try:
-        with open(history_file,"r") as f:
-            return json.load(f)
-    except:
-        return {"wins":0,"loss":0,"streak":0}
+def get_pairs():
+    url = "https://api.binance.com/api/v3/ticker/24hr"
+    data = requests.get(url).json()
+    pairs = [x for x in data if "USDT" in x["symbol"]]
+    pairs = sorted(pairs, key=lambda x: float(x["quoteVolume"]), reverse=True)
+    return pairs[:PAIR_LIMIT]
 
-def save_history(h):
-    with open(history_file,"w") as f:
-        json.dump(h,f)
+def analyze_gpt(symbol, price, change, volume):
 
-def pairs():
-    url="https://www.okx.com/api/v5/public/instruments?instType=SPOT"
-    d=requests.get(url).json()["data"]
-    return [x["instId"] for x in d if "USDT" in x["instId"]]
+    prompt = f"""
+You are elite crypto intraday trader.
 
-def candles(sym,tf,limit):
-    url=f"https://www.okx.com/api/v5/market/candles?instId={sym}&bar={tf}&limit={limit}"
-    return requests.get(url).json()["data"]
+Analyze market data:
 
-def ticker(sym):
-    url=f"https://www.okx.com/api/v5/market/ticker?instId={sym}"
-    return requests.get(url).json()["data"][0]
+Pair: {symbol}
+Price: {price}
+24h Change: {change}
+Volume: {volume}
 
-def btc_regime():
-    c=candles("BTC-USDT","5m",80)
-    cl=[float(x[4]) for x in c]
-    return "BULL" if statistics.mean(cl[:5])>statistics.mean(cl[20:40]) else "BEAR"
+Decide:
+1) Direction: LONG / SHORT / NO TRADE
+2) Confidence: %
+3) Entry logic short explanation
 
-def trend(sym):
-    c=candles(sym,"15m",60)
-    cl=[float(x[4]) for x in c]
-    return "UP" if statistics.mean(cl[:5])>statistics.mean(cl[20:40]) else "DOWN"
+Answer format:
+DIRECTION | CONFIDENCE | REASON
+"""
 
-def signal(sym,btc_bias,adaptive_boost):
-    try:
-        t=ticker(sym)
-        if float(t["volCcy24h"])<MIN_VOL:
-            return None
+    r = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.2
+    )
 
-        c=candles(sym,"1m",80)
-        highs=[float(x[2]) for x in c]
-        lows=[float(x[3]) for x in c]
-        closes=[float(x[4]) for x in c]
-        vols=[float(x[5]) for x in c]
+    return r.choices[0].message.content
 
-        last=closes[0]
-        prevH=highs[1]
-        prevL=lows[1]
+def send_signal(symbol, side, entry, conf, reason):
 
-        conf=50+adaptive_boost
-        direction=None
+    if side == "LONG":
+        sl = entry * 0.985
+        tp1 = entry * 1.02
+        tp2 = entry * 1.035
+        tp3 = entry * 1.06
+    else:
+        sl = entry * 1.015
+        tp1 = entry * 0.98
+        tp2 = entry * 0.965
+        tp3 = entry * 0.94
 
-        # liquidity trap
-        if highs[0]>max(highs[3:12]) and last<prevH:
-            direction="SHORT"
-            conf+=20
-        if lows[0]<min(lows[3:12]) and last>prevL:
-            direction="LONG"
-            conf+=20
+    msg = f"""
+🤖 AI GPT SIGNAL
 
-        # structure break
-        if last>prevH:
-            direction="LONG"
-            conf+=10
-        if last<prevL:
-            direction="SHORT"
-            conf+=10
+Pair : {symbol}
+Side : {side}
 
-        # volume spike
-        if vols[0]>statistics.mean(vols[20:50])*2:
-            conf+=12
+Entry : {entry}
+SL : {sl:.4f}
 
-        # trend align
-        tr=trend(sym)
-        if tr=="UP" and direction=="LONG":
-            conf+=6
-        if tr=="DOWN" and direction=="SHORT":
-            conf+=6
+TP1 : {tp1:.4f}
+TP2 : {tp2:.4f}
+TP3 : {tp3:.4f}
 
-        # btc align
-        if btc_bias=="BULL" and direction=="LONG":
-            conf+=6
-        if btc_bias=="BEAR" and direction=="SHORT":
-            conf+=6
+Confidence : {conf}%
+Reason : {reason}
+"""
 
-        if conf>=70 and direction:
-            sl=last*(0.996 if direction=="LONG" else 1.004)
-            tp=last*(1.009 if direction=="LONG" else 0.991)
-
-            grade="A+" if conf>88 else "A" if conf>80 else "B+"
-
-            return sym,direction,last,sl,tp,conf,grade
-    except:
-        return None
-
-plist=pairs()
-hist=load_history()
+    requests.post(SEND_URL, data={"chat_id":CHAT_ID,"text":msg})
 
 while True:
+    try:
+        pairs = get_pairs()
 
-    # AUTO PAUSE jika losing streak parah
-    if hist["streak"]>=LOSS_STREAK_LIMIT:
-        print("AI PAUSE MODE ACTIVE")
-        time.sleep(300)
-        hist["streak"]=0
-        save_history(hist)
+        for p in pairs:
+            symbol = p["symbol"]
+            price = float(p["lastPrice"])
+            change = p["priceChangePercent"]
+            volume = p["quoteVolume"]
 
-    bias=btc_regime()
+            ai = analyze_gpt(symbol, price, change, volume)
 
-    winrate = hist["wins"]/(hist["wins"]+hist["loss"]+1)
-    adaptive_boost = int(winrate*10)
+            try:
+                side, conf, reason = ai.split("|")
+                side = side.strip()
+                conf = int(conf.strip())
+                reason = reason.strip()
+            except:
+                continue
 
-    sigs=[]
-    for p in plist:
-        s=signal(p,bias,adaptive_boost)
-        if s:
-            sigs.append(s)
+            now = time.time()
 
-    sigs=sorted(sigs,key=lambda x:x[5],reverse=True)[:MAX_SIGNAL]
+            if side != "NO TRADE" and conf >= CONF_FILTER:
+                if symbol not in last_signal or now - last_signal[symbol] > 3600:
+                    send_signal(symbol, side, price, conf, reason)
+                    last_signal[symbol] = now
+                    print("AI SIGNAL:", symbol)
 
-    for s in sigs:
-        pair,dirc,entry,sl,tp,conf,grade=s
+        time.sleep(SCAN_INTERVAL)
 
-        msg=f"""
-🚨 AI ELITE SIGNAL 🚨
-
-PAIR: {pair.replace('-','')}
-POSITION: {dirc}
-
-ENTRY: {entry}
-SL: {round(sl,6)}
-TP: {round(tp,6)}
-
-CONFIDENCE: {conf}%
-GRADE: {grade}
-
-Winrate AI: {round(winrate*100,1)}%
-
-Adaptive smart money model active ⚡
-"""
-        send(msg)
-
-    # simulasi update performa random (nanti real bisa dari exchange API)
-    import random
-    if random.random()>0.5:
-        hist["wins"]+=1
-        hist["streak"]=0
-    else:
-        hist["loss"]+=1
-        hist["streak"]+=1
-
-    save_history(hist)
-    
-    print(f"[LOOP] Found {len(sigs)} signals", file=sys.stderr)
-    time.sleep(60)
+    except Exception as e:
+        print("ERR:", e)
+        time.sleep(20)
