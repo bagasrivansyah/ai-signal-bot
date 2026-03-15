@@ -162,7 +162,6 @@ while True:
     batch = symbols[start:end]
 
     print(f"SCAN BATCH {batch_index+1}/{batch_count}")
-    send_signal("TEST-USDT","LONG",100,0.1,1.1)
 
     for s in batch:
 
