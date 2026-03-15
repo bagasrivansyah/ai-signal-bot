@@ -1,98 +1,79 @@
 import requests
 import time
 import os
-from openai import OpenAI
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-OPENAI_KEY = os.getenv("OPENAI_KEY")
-
-client = OpenAI(api_key=OPENAI_KEY)
+ALTFINS_KEY = os.getenv("ALTFINS_KEY")
 
 SEND_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-SCAN_INTERVAL = 120
-PAIR_LIMIT = 40
+SCAN_INTERVAL = 300
 CONF_FILTER = 75
 COOLDOWN = 3600
 
+headers = {
+    "Authorization": f"Bearer {ALTFINS_KEY}"
+}
+
 last_signal = {}
 
-# ================= OKX MARKET DATA =================
+# ================= GET ALL COINS =================
 
-def get_pairs():
+def get_market():
+
+    url = "https://platform.altfins.com/api/v1/market/coins"
+
     try:
-        url = "https://www.okx.com/api/v5/market/tickers?instType=SPOT"
-        r = requests.get(url, timeout=10)
-
+        r = requests.get(url, headers=headers, timeout=15)
         data = r.json()
-
-        if data.get("code") != "0":
-            print("OKX ERROR")
-            return []
-
-        tickers = data.get("data", [])
-
-        usdt = [x for x in tickers if "-USDT" in x["instId"]]
-
-        usdt = sorted(usdt, key=lambda x: float(x["volCcy24h"]), reverse=True)
-
-        return usdt[:PAIR_LIMIT]
-
-    except Exception as e:
-        print("OKX FETCH ERROR:", e)
+        return data
+    except:
         return []
 
-# ================= AI ANALYSIS =================
+# ================= ANALYZE =================
 
-def analyze_ai(symbol, price, change, volume):
-
-    prompt = f"""
-You are elite crypto intraday trader.
-
-Market:
-Pair: {symbol}
-Price: {price}
-24h Change: {change}
-Volume: {volume}
-
-Decide trade.
-
-Format STRICT:
-LONG or SHORT or NO TRADE | confidence | reason
-"""
+def analyze(coin):
 
     try:
-        r = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role":"user","content":prompt}],
-            temperature=0.2
-        )
-        return r.choices[0].message.content
-
-    except Exception as e:
-        print("GPT ERROR:", e)
+        symbol = coin["symbol"]
+        trend = float(coin["trendStrength"])
+        price = float(coin["price"])
+    except:
         return None
+
+    if trend > 70:
+        side = "LONG"
+        conf = min(95, trend)
+
+    elif trend < 30:
+        side = "SHORT"
+        conf = min(95, 100 - trend)
+
+    else:
+        return None
+
+    return symbol, side, conf, price, trend
 
 # ================= TELEGRAM =================
 
-def send_signal(symbol, side, entry, conf, reason):
+def send_signal(symbol, side, entry, conf, trend):
 
     if side == "LONG":
         sl = entry * 0.985
-        tp1 = entry * 1.02
-        tp2 = entry * 1.04
-        tp3 = entry * 1.07
+        tp1 = entry * 1.025
+        tp2 = entry * 1.05
+        tp3 = entry * 1.08
     else:
         sl = entry * 1.015
-        tp1 = entry * 0.98
-        tp2 = entry * 0.96
-        tp3 = entry * 0.93
+        tp1 = entry * 0.975
+        tp2 = entry * 0.95
+        tp3 = entry * 0.92
 
-    text = f"""
-🤖 AI SIGNAL
+    msg = f"""
+🚨 ALTFINS SNIPER SIGNAL
 
-Pair : {symbol}
+Pair : {symbol}USDT
 Side : {side}
 
 Entry : {entry}
@@ -103,57 +84,38 @@ TP1 : {tp1:.4f}
 TP2 : {tp2:.4f}
 TP3 : {tp3:.4f}
 
+Trend Score : {trend}
 Confidence : {conf}%
-Reason : {reason}
 """
 
-    requests.post(SEND_URL, data={"chat_id":CHAT_ID,"text":text})
+    requests.post(SEND_URL, data={"chat_id": CHAT_ID, "text": msg})
 
 # ================= MAIN LOOP =================
 
 while True:
-    try:
-        pairs = get_pairs()
 
-        for p in pairs:
+    coins = get_market()
 
-            symbol = p["instId"]
-            price = float(p["last"])
-            change = p["sodUtc0"]
-            volume = p["volCcy24h"]
+    print("SCAN COINS:", len(coins))
 
-            ai = analyze_ai(symbol, price, change, volume)
+    for c in coins:
 
-            if not ai:
-                continue
+        result = analyze(c)
 
-            parts = ai.split("|")
+        if not result:
+            continue
 
-            if len(parts) < 3:
-                continue
+        symbol, side, conf, price, trend = result
 
-            side = parts[0].strip().upper()
+        now = time.time()
 
-            try:
-                conf = int(parts[1].strip())
-            except:
-                continue
+        if conf >= CONF_FILTER:
 
-            reason = parts[2].strip()
+            if symbol not in last_signal or now - last_signal[symbol] > COOLDOWN:
 
-            now = time.time()
+                send_signal(symbol, side, price, conf, trend)
+                last_signal[symbol] = now
 
-            if side != "NO TRADE" and conf >= CONF_FILTER:
+                print("SIGNAL:", symbol)
 
-                if symbol not in last_signal or now - last_signal[symbol] > COOLDOWN:
-
-                    send_signal(symbol, side, price, conf, reason)
-                    last_signal[symbol] = now
-
-                    print("AI OKX SIGNAL:", symbol)
-
-        time.sleep(SCAN_INTERVAL)
-
-    except Exception as e:
-        print("MAIN ERROR:", e)
-        time.sleep(30)
+    time.sleep(SCAN_INTERVAL)
