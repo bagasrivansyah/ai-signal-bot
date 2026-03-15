@@ -177,5 +177,5 @@ Adaptive smart money model active ⚡
 
     save_history(hist)
 
-print(f"[LOOP] Found {len(sigs)} signal", file=sys.stderr)
+    print(f"[LOOP] Found {len(sigs)} signal", file=sys.stderr)
     time.sleep(60)
