@@ -2,10 +2,16 @@ import requests
 import time
 import statistics
 import json
-from datetime import datetime
+import os
+import sys
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHANNEL = os.getenv("TELEGRAM_CHANNEL")
 
-TOKEN = "8784560596:AAGSpO5fDRTOiEvT8QyMa-o51Danp53W5Vw"
-CHANNEL = "https://t.me/SMCS_AI_bot"
+if not TOKEN or not CHANNEL:
+    print(f"ERROR: TOKEN missing or CHANNEL missing", file=sys.stderr)
+    sys.exit(1)
+
+print(f"[START] Bot initialized", file=sys.stderr)
 
 MIN_VOL = 1500000
 MAX_SIGNAL = 3
@@ -171,4 +177,5 @@ Adaptive smart money model active ⚡
 
     save_history(hist)
 
+print(f"[LOOP] Found {len(sigs)} signal", file=sys.stderr)
     time.sleep(60)
