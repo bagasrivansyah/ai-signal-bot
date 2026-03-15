@@ -1,22 +1,24 @@
 import requests
 import time
 import os
+import math
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 SEND_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-SCAN_INTERVAL = 60
+SCAN_INTERVAL = 30
+BATCH_SIZE = 40
 COOLDOWN = 1800
-MIN_MOVE = 0.5
-VOL_SPIKE = 1.8
+MIN_MOVE = 0.4
+VOL_SPIKE = 1.6
 
 last_price = {}
 last_signal_time = {}
 last_signal_side = {}
 
-# ================= GET ALL SYMBOLS =================
+# ================= GET SYMBOLS =================
 
 def get_symbols():
 
@@ -122,7 +124,7 @@ def send_signal(symbol, side, entry, change, vol):
         tp2 = entry * 0.96
 
     msg = f"""
-💀 BINGX ALL MARKET SNIPER
+💀 BINGX ROLLING SNIPER
 
 Pair : {symbol}
 Side : {side}
@@ -142,16 +144,26 @@ Volume Spike : {vol:.2f}x
     except:
         print("telegram error")
 
-# ================= LOOP =================
+# ================= MAIN =================
 
 symbols = get_symbols()
-print("TOTAL SYMBOL:", len(symbols))
+total = len(symbols)
+
+print("TOTAL SYMBOL:", total)
+
+batch_count = math.ceil(total / BATCH_SIZE)
+batch_index = 0
 
 while True:
 
-    print("SCANNING FULL MARKET...")
+    start = batch_index * BATCH_SIZE
+    end = start + BATCH_SIZE
 
-    for s in symbols:
+    batch = symbols[start:end]
+
+    print(f"SCAN BATCH {batch_index+1}/{batch_count}")
+
+    for s in batch:
 
         result = analyze(s)
 
@@ -159,5 +171,10 @@ while True:
             side, price, change, vol = result
             send_signal(s, side, price, change, vol)
             print("SIGNAL:", s)
+
+    batch_index += 1
+
+    if batch_index >= batch_count:
+        batch_index = 0
 
     time.sleep(SCAN_INTERVAL)
