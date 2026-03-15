@@ -8,11 +8,11 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 SEND_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-SCAN_INTERVAL = 30
+SCAN_INTERVAL = 20
 BATCH_SIZE = 40
 COOLDOWN = 1800
-MIN_MOVE = 0.4
-VOL_SPIKE = 1.6
+MIN_MOVE = 0.25
+VOL_SPIKE = 1.3
 
 last_price = {}
 last_signal_time = {}
