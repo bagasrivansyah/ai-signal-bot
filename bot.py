@@ -140,9 +140,20 @@ Volume Spike : {vol:.2f}x
 """
 
     try:
-        requests.post(SEND_URL, data={"chat_id": CHAT_ID, "text": msg})
-    except:
-        print("telegram error")
+        r = requests.post(
+            SEND_URL,
+            json={
+                "chat_id": CHAT_ID,
+                "text": msg
+            },
+            timeout=15
+        )
+
+        print("TELEGRAM STATUS:", r.status_code)
+        print("TELEGRAM RESP:", r.text)
+
+    except Exception as e:
+        print("TELEGRAM ERROR:", e)
 
 # ================= MAIN =================
 
