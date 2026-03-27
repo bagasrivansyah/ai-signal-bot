@@ -14,8 +14,10 @@ from groq import Groq
 TOKEN_TELEGRAM = os.getenv("TOKEN_TELEGRAM")
 CHAT_ID = os.getenv("CHAT_ID") or os.getenv("ID_CHAT_TELEGRAM")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+COINGLASS_API_KEY = os.getenv("COINGLASS_API_KEY")
 PORT = int(os.getenv("PORT", 8080))
 
+# --- KEAMANAN: WHITELIST SYSTEM (OS VAR) ---
 RAW_WHITELIST = os.getenv("WHITELIST_IDS", "")
 WHITELIST_IDS = [int(i.strip()) for i in RAW_WHITELIST.split(",") if i.strip().isdigit()]
 
@@ -24,14 +26,14 @@ TRADE_HISTORY = []
 COOLDOWN_COINS = {} 
 LEVERAGE = 20
 
-STABLE_COINS = ["USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "DAIUSDT", "AEURUSDT", "EURUSDT", "GBPUSDT", "BUSDUSDT", "USDPUSDT", "USD1USDT", "USDTUSDT", "UUSDT", "RLUSDUSDT"]
+STABLE_COINS = ["USDC", "FDUSD", "TUSD", "DAI", "AEUR", "EUR", "GBP", "BUSD", "USDP", "USD1", "USDT", "UUSDT", "RLUSD"]
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 bot = telebot.TeleBot(TOKEN_TELEGRAM, threaded=True, num_threads=20)
 client_groq = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 app = Flask(__name__)
 
-# --- WEB DASHBOARD HTML (ULTRA-LUXURY) ---
+# --- DASHBOARD HTML (ULTRA-LUXURY DESIGN FOR APK) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -50,17 +52,19 @@ HTML_TEMPLATE = """
         .signal-card::after { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: #00ff88; }
         .signal-card.short::after { background: #ff4444; }
         .entry-price { font-size: 24px; text-align: center; color: #00ccff; margin: 10px 0; border: 1px dashed #333; padding: 10px; }
-        .target-hit { border-color: #ffcc00 !important; color: #ffcc00 !important; background: rgba(255, 204, 0, 0.15); box-shadow: inset 0 0 10px #ffcc00; }
         .target-box { font-size: 10px; text-align: center; border: 1px solid #222; padding: 5px; transition: 0.5s; }
-        .target-box span { display: block; color: #fff; font-size: 12px; margin-top: 3px; }
+        .target-hit { border-color: #ffcc00 !important; color: #ffcc00 !important; background: rgba(255, 204, 0, 0.15); box-shadow: inset 0 0 10px #ffcc00; }
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.98); z-index: 10000; overflow-y: auto; }
+        #alert-init-btn { width: 100%; padding: 12px; background: #00ff88; color: #000; border: none; font-family: 'Orbitron'; font-weight: bold; cursor: pointer; margin-bottom: 20px; box-shadow: 0 0 15px #00ff88; }
     </style>
     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 </head>
 <body>
     <div class="app-container">
+        <button id="alert-init-btn" onclick="initSystem()">[ ACTIVATE NEURAL INTERFACE ]</button>
         <div class="app-header"><h1>NEXUS QUANTUM</h1></div>
-        {% if signals %}{% for s in signals %}
-        <div class="signal-card {{ 'short' if s.signal == 'SHORT' else '' }}">
+        {% for s in signals %}
+        <div class="signal-card {{ 'short' if s.signal == 'SHORT' else '' }}" onclick="openModal('{{ s.symbol }}', '{{ s.reason }}')">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="font-family:'Orbitron'; font-size:18px; color:white;">#{{ s.symbol }}</div>
                 <div style="font-size: 10px; padding: 2px 8px; background: {{ '#00ff88' if s.signal == 'LONG' else '#ff4444' }}; color: #000; font-weight: bold;">{{ s.signal }} VECTOR</div>
@@ -72,9 +76,27 @@ HTML_TEMPLATE = """
                 <div class="target-box {{ 'target-hit' if s.get('tp3_n') else '' }}">T3<span>{{ s.tp3 }}</span></div>
             </div>
         </div>
-        {% endfor %}{% else %}<div style="text-align:center; color:#222; margin-top:100px;">[ SCANNING FUTURES MARKET ]</div>{% endif %}
+        {% endfor %}
     </div>
-    <script> setInterval(() => { location.reload(); }, 25000); </script>
+    <div id="modal">
+        <div style="padding:20px; max-width:500px; margin:auto;">
+            <div onclick="closeModal()" style="color:#ff4444; text-align:right; cursor:pointer; font-family: 'Orbitron'; font-size: 14px;">[ CLOSE_TERMINAL X ]</div>
+            <div id="chart-div" style="height:320px; margin:20px 0; border: 1px solid #333;"></div>
+            <div id="reason-content" style="color:#ccc; font-size:13px; line-height:1.6; border:1px solid #00ff88; padding:15px; background:#050505;"></div>
+        </div>
+    </div>
+    <audio id="newSigBeep" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3"></audio>
+    <audio id="hitChime" src="https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3"></audio>
+    <script>
+        function initSystem() { document.getElementById('alert-init-btn').style.display = 'none'; }
+        function openModal(symbol, reason) {
+            document.getElementById('modal').style.display = 'block';
+            document.getElementById('reason-content').innerText = reason;
+            new TradingView.widget({ "width": "100%", "height": 320, "symbol": "BINANCE:" + symbol + "PERP", "interval": "60", "theme": "dark", "style": "1", "container_id": "chart-div", "hide_top_toolbar": true });
+        }
+        function closeModal() { document.getElementById('modal').style.display = 'none'; document.getElementById('chart-div').innerHTML = ""; }
+        setInterval(() => { if(document.getElementById('modal').style.display !== 'block') location.reload(); }, 25000);
+    </script>
 </body>
 </html>
 """
@@ -82,87 +104,59 @@ HTML_TEMPLATE = """
 @app.route('/')
 def dashboard(): return render_template_string(HTML_TEMPLATE, signals=ACTIVE_SIGNALS)
 
-# --- BINANCE FUTURES API ENGINE ---
-def call_binance_futures(endpoint):
-    url = f"https://fapi.binance.com{endpoint}"
+# --- COINGLASS V4 API TOOLS ---
+def call_coinglass_v4(endpoint, params=None):
+    url = f"https://open-api-v4.coinglass.com{endpoint}"
+    headers = {"accept": "application/json", "CG-API-KEY": COINGLASS_API_KEY}
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200: return response.json()
-        return None
+        res = requests.get(url, headers=headers, params=params, timeout=15)
+        return res.json() if res.status_code == 200 else None
     except: return None
 
-# --- TECHNICAL ENGINE (NO TRADINGVIEW DEPENDENCY) ---
-def get_multi_tf_technical(symbol):
+def get_market_intel(symbol):
+    coin = symbol.replace("USDT", "").upper()
     try:
-        # Ambil data klines langsung dari server Futures (Data Primer)
-        data_4h = call_binance_futures(f"/fapi/v1/klines?symbol={symbol}&interval=4h&limit=20")
-        data_1h = call_binance_futures(f"/fapi/v1/klines?symbol={symbol}&interval=1h&limit=60")
-        
-        if not data_4h or len(data_4h) < 6 or not data_1h or len(data_1h) < 20:
-            return "INSUFFICIENT"
-
-        c1h = [{"h": float(x[2]), "l": float(x[3]), "c": float(x[4]), "v": float(x[5])} for x in data_1h]
-        c4h = [{"c": float(x[4])} for x in data_4h]
-
-        # Hitung RSI 14 Mandiri
-        prices = [x['c'] for x in c1h]
-        deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
-        gains = sum([d for d in deltas[-14:] if d > 0]) / 14
-        losses = abs(sum([d for d in deltas[-14:] if d < 0]) / 14)
-        rsi = 100 - (100 / (1 + (gains/losses))) if losses != 0 else 100
-
-        # Hitung Volatilitas 20 jam
-        recent_h = max([x['h'] for x in c1h[-20:]])
-        recent_l = min([x['l'] for x in c1h[-20:]])
-        range_pct = ((recent_h - recent_l) / c1h[-1]['c']) * 100
-
-        trend_4h = "BULLISH" if c4h[-1]['c'] > c4h[-10]['c'] else "BEARISH"
+        # Ambil OHLC dan Price via V4
+        res = call_coinglass_v4("/api/v1/futures/openInterest/ohlc", {"symbol": coin, "interval": "h1"})
+        if not res or not res.get('data'): return None
+        latest = res['data'][-1]
+        # Ambil Long/Short Ratio
+        ls_res = call_coinglass_v4("/api/v1/futures/longShort_chart", {"symbol": coin, "interval": "h1"})
+        ls_data = ls_res['data'][-1] if ls_res and ls_res.get('data') else {"longShortRatio": 1, "longRate": 50, "shortRate": 50}
         
         return {
-            "trend_4h": trend_4h, "price_1h": c1h[-1]['c'], 
-            "rsi": round(rsi, 2), "market_env": "TRENDING" if range_pct > 1.2 else "CHOPPY",
-            "range_pct": round(range_pct, 2)
+            "price": latest.get('close', 0),
+            "oi": latest.get('openInterest', 0),
+            "ls_ratio": ls_data.get('longShortRatio'),
+            "long_rate": ls_data.get('longRate'),
+            "short_rate": ls_data.get('shortRate'),
+            "h": latest.get('high'), "l": latest.get('low')
         }
-    except Exception as e:
-        print(f"DEBUG: Error technical for {symbol}: {e}")
-        return None
+    except: return None
 
-# --- AI SNIPER ENGINE ---
-def get_ai_analysis(coin_data):
-    if not client_groq: return None
-    symbol, price = coin_data.get('symbol'), float(coin_data.get('lastPrice') or coin_data.get('price', 0))
-    
-    tf = get_multi_tf_technical(symbol)
-    if tf == "INSUFFICIENT" or tf is None:
-        print(f"DEBUG: {symbol} skipped due to insufficient data.")
-        return "SKIP"
-
-    # Learning Context
-    learning_log = "\n".join([f"- {r['symbol']}: {r['status']} ({r['roi']:+.1f}%)" for r in TRADE_HISTORY[-5:]])
-
-    prompt = f"""
-    Role: Professional Quant Manager. Object: {symbol} at {price}.
-    Matrix: 4H {tf['trend_4h']}, RSI: {tf['rsi']}, Market: {tf['market_env']}, Volatility: {tf['range_pct']}%.
-    {learning_log}
-
-    Task: Berikan Sniper Signal JSON: signal(LONG/SHORT/WAIT), entry, tp1, tp2, tp3, sl, probability(81-95), reason.
-    Rules: RR 1:2, AMD Logic, Entry at Retrace, NO scientific notation.
-    """
+# --- TECHNICAL ENGINE (V4 DATA) ---
+def get_multi_tf_technical(symbol):
     try:
-        completion = client_groq.chat.completions.create(model=GROQ_MODEL, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}, timeout=25)
-        return json.loads(completion.choices[0].message.content)
-    except Exception as e:
-        print(f"DEBUG: Groq Error {symbol}: {e}")
-        return None
-
-# --- UI DISPLAY ---
-def calculate_roi(entry, target, side):
-    try:
-        e, t = float(entry), float(target)
-        if e == 0: return 0
-        diff = (t - e) if str(side).upper() == "LONG" else (e - t)
-        return (diff / e) * 100 * LEVERAGE
-    except: return 0
+        # Menggunakan V4 OHLC untuk simulasi Multi-TF
+        data_4h = call_coinglass_v4("/api/v1/futures/openInterest/ohlc", {"symbol": symbol.replace("USDT",""), "interval": "h4"})
+        data_1h = call_coinglass_v4("/api/v1/futures/openInterest/ohlc", {"symbol": symbol.replace("USDT",""), "interval": "h1"})
+        if not data_4h or not data_1h: return "INSUFFICIENT"
+        
+        c4h = data_4h['data']
+        c1h = data_1h['data']
+        trend_4h = "BULLISH" if c4h[-1]['close'] > c4h[-5]['close'] else "BEARISH"
+        
+        # Deteksi Choppy
+        recent_h = max([x['high'] for x in c1h[-20:]])
+        recent_l = min([x['low'] for x in c1h[-20:]])
+        range_pct = ((recent_h - recent_l) / c1h[-1]['close']) * 100
+        
+        return {
+            "trend_4h": trend_4h, "price_1h": c1h[-1]['close'], 
+            "market_env": "TRENDING" if range_pct > 1.2 else "CHOPPY",
+            "range_pct": range_pct, "high_24h": recent_h, "low_24h": recent_l
+        }
+    except: return None
 
 def format_price(val):
     try:
@@ -171,53 +165,89 @@ def format_price(val):
         return f"{v:.10f}".rstrip('0').rstrip('.') if v < 0.001 else f"{v:,.4f}"
     except: return str(val)
 
+def calculate_roi(entry, target, side):
+    try:
+        e, t = float(entry), float(target)
+        if e == 0: return 0
+        diff = (t - e) if str(side).upper() == "LONG" else (e - t)
+        return (diff / e) * 100 * LEVERAGE
+    except: return 0
+
+# --- AI SNIPER ENGINE (QUANT LEARNING) ---
+def get_ai_analysis(coin_data):
+    if not client_groq: return None
+    symbol = coin_data.get('symbol')
+    intel = get_market_intel(symbol)
+    tf = get_multi_tf_technical(symbol)
+    if not intel or not tf or tf == "INSUFFICIENT": return "SKIP"
+
+    learning_log = "\n".join([f"- {r['symbol']}: {r['status']}" for r in TRADE_HISTORY[-5:]])
+    win_rate = (len([t for t in TRADE_HISTORY if t['roi'] > 0]) / len(TRADE_HISTORY)) * 100 if TRADE_HISTORY else 0
+
+    prompt = f"""
+    Role: Lead Quant Strategist. Object: {symbol} at ${format_price(intel['price'])}.
+    [V4 INTEL] OI: {intel['oi']}, LS Ratio: {intel['ls_ratio']}, 4H Trend: {tf['trend_4h']}, Market: {tf['market_env']}.
+    [METRICS] WinRate: {win_rate:.1f}%. History: {learning_log}
+    Task: Sniper Signal JSON. Rules: AMD Logic, Fibonacci 1.618, dynamic prob 81-99%. No scientific notation. Retrace-Entry.
+    Output JSON ONLY: {{"symbol": "{symbol}", "signal": "LONG/SHORT/WAIT", "entry": 0, "tp1": 0, "tp2": 0, "tp3": 0, "sl": 0, "probability": 0, "reason": "SMC V4 reasoning."}}
+    """
+    try:
+        completion = client_groq.chat.completions.create(model=GROQ_MODEL, messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}, timeout=25)
+        res = json.loads(completion.choices[0].message.content)
+        res['oi'] = intel['oi']
+        return res
+    except: return None
+
+# --- UI DISPLAY (BLACK-BOX) ---
 def send_signal_ui(sig_data, target_chat):
     if not sig_data or sig_data == "SKIP": return
-    symbol = sig_data.get('symbol')
-    side = str(sig_data.get('signal', 'WAIT')).upper()
+    symbol, side = sig_data.get('symbol'), str(sig_data.get('signal', 'WAIT')).upper()
     entry, tp1, tp2, tp3, sl = sig_data.get('entry', 0), sig_data.get('tp1', 0), sig_data.get('tp2', 0), sig_data.get('tp3', 0), sig_data.get('sl', 0)
     if not symbol or side not in ['LONG', 'SHORT'] or entry == 0: return
 
     roi1, roi2, roi3 = calculate_roi(entry, tp1, side), calculate_roi(entry, tp2, side), calculate_roi(entry, tp3, side)
-    tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}PERP"
-    
     try: prob = int(float(sig_data.get('probability', 85)))
     except: prob = 85
     meter = "█" * (prob // 10) + "░" * (10 - (prob // 10))
+    tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{symbol}PERP"
 
     msg = (
         f"╔══════════════════════╗\n  **NEXUS QUANTUM TERMINAL**\n╚══════════════════════╝\n\n"
-        f"⬥ **IDENTIFIER:** `#{symbol}` (FUTURES)\n⬥ **EXECUTION:** `{side} VECTOR`\n"
+        f"⬥ **IDENTIFIER:** `#{symbol}` (V4_DATA)\n⬥ **EXECUTION:** `{side} VECTOR`\n"
+        f"⬥ **INSTITUTIONAL OI:** `${format_price(sig_data.get('oi', 0))}`\n"
         f"⬥ **STRENGTH:** `[{meter}] {prob}%` \n━━━━━━━━━━━━━━━━━━━━\n"
         f"┌─── **ENTRY CORRIDOR** ───┐\n   ` {format_price(entry)} `\n└──────────────────────┘\n\n"
-        f"⬥ **QUANTITATIVE TARGETS**\n  ├─ **T1:** `{format_price(tp1)}` (`{roi1:+.1f}%`)\n"
-        f"  ├─ **T2:** `{format_price(tp2)}` (`{roi2:+.1f}%`)\n  └─ **T3:** `{format_price(tp3)}` (`{roi3:+.1f}%`)\n\n"
-        f"⬥ **RISK MITIGATION (SL)**\n  └─ `{format_price(sl)}` (Isolated 20x)\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"⬥ **QUANTITATIVE TARGETS**\n"
+        f"  ├ T1: `{format_price(tp1)}` ({roi1:+.1f}%)\n"
+        f"  ├ T2: `{format_price(tp2)}` \n"
+        f"  └ T3: `{format_price(tp3)}` \n\n"
+        f"⬥ **RISK MITIGATION (SL)**\n"
+        f"  └ `{format_price(sl)}` (Isolated 20x)\n━━━━━━━━━━━━━━━━━━━━\n"
         f"📝 **NEURAL REASONING:**\n_{sig_data.get('reason', 'Confirmed.')}_\n\n"
-        f"🔗 [ACCESS REAL-TIME DATA HUB]({tv_link})\n━━━━━━━━━━━━━━━━━━━━\n**SMC GLOBAL • INSTITUTIONAL GRADE**"
+        f"🔗 [ACCESS REAL-TIME DATA HUB]({tv_link})\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"**SMC GLOBAL • V4 LIQUIDITY ENGINE**"
     )
     bot.send_message(target_chat, msg, parse_mode="Markdown", disable_web_page_preview=False)
     if not any(s.get('symbol') == symbol for s in ACTIVE_SIGNALS): ACTIVE_SIGNALS.append(sig_data)
 
-# --- LOGIKA WHITELIST & HANDLERS ---
+# --- HANDLERS & MONITORING ---
 def is_authorized(uid): return not WHITELIST_IDS or uid in WHITELIST_IDS
 def denied_access(message): bot.reply_to(message, "❌ **ACCESS DENIED**")
 
 @bot.message_handler(commands=['start'])
-def start_cmd(message):
+def start(message):
     if not is_authorized(message.from_user.id): return denied_access(message)
-    markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(KeyboardButton("🛰️ INITIATE SCAN"), KeyboardButton("🖥️ CORE STATUS"))
-    bot.send_message(message.chat.id, "⚡ **NEXUS QUANTUM CORE ONLINE**", reply_markup=markup)
+    m = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True); m.add(KeyboardButton("🛰️ INITIATE SCAN"), KeyboardButton("🖥️ CORE STATUS"))
+    bot.send_message(message.chat.id, "⚡ **NEXUS QUANTUM CORE ONLINE**", reply_markup=m)
 
 @bot.message_handler(func=lambda m: m.text == "🛰️ INITIATE SCAN")
-def manual_scan(message):
+def man_scan(message):
     if not is_authorized(message.from_user.id): return denied_access(message)
-    bot.reply_to(message, "🔄 `INITIATING_ASYNC_SCANNER...`")
+    bot.reply_to(message, "🔄 `INITIATING_V4_SCANNER...`")
     threading.Thread(target=run_scanner).start()
 
 @bot.message_handler(func=lambda m: m.text == "🖥️ CORE STATUS")
-def status_btn(message):
+def status(message):
     if not is_authorized(message.from_user.id): return denied_access(message)
     bot.send_message(message.chat.id, f"🟢 **SYSTEM DIAGNOSTICS: OPTIMAL**\n🎯 Signals Monitored: {len(ACTIVE_SIGNALS)}")
 
@@ -226,15 +256,14 @@ def manual_check(message):
     if not is_authorized(message.from_user.id): return denied_access(message)
     try:
         coin = "".join(re.findall(r'[A-Z0-9]', message.text.split()[1].upper())); symbol = f"{coin}USDT"
-        res = call_binance_futures(f"/fapi/v1/ticker/24hr?symbol={symbol}")
+        res = get_market_intel(symbol)
         if res:
-            sig = get_ai_analysis(res)
+            sig = get_ai_analysis({"symbol": symbol})
             if sig and sig != "SKIP": send_signal_ui(sig, message.chat.id)
-            else: bot.send_message(message.chat.id, f"⚠️ `INSUFFICIENT_DATA/CHOPPY:` {symbol}")
-        else: bot.send_message(message.chat.id, f"❌ `IDENTIFIER_NOT_FOUND:` {symbol}")
+            else: bot.send_message(message.chat.id, "⚠️ `INSUFFICIENT LIQUIDITY / CHOPPY`")
+        else: bot.send_message(message.chat.id, f"❌ `NOT FOUND IN V4:` {symbol}")
     except: pass
 
-# --- MONITORING & SCHEDULER ---
 def monitor_active_signals():
     global ACTIVE_SIGNALS, TRADE_HISTORY, COOLDOWN_COINS
     while True:
@@ -242,40 +271,57 @@ def monitor_active_signals():
             for sig in ACTIVE_SIGNALS[:]:
                 symbol, entry, side = sig['symbol'], float(sig['entry']), sig['signal'].upper()
                 tp1, tp2, tp3, sl = float(sig['tp1']), float(sig['tp2']), float(sig['tp3']), float(sig['sl'])
-                res = call_binance_futures(f"/fapi/v1/ticker/price?symbol={symbol}")
-                if not res: continue
-                curr, roi = float(res['price']), calculate_roi(entry, float(res['price']), side)
-                is_finished, status = False, ""
-                if (side == "LONG" and curr <= sl) or (side == "SHORT" and curr >= sl):
-                    status, is_finished = "🛑 SL HIT", True
-                elif (side == "LONG" and curr >= tp3) or (side == "SHORT" and curr <= tp3):
-                    status, is_finished = "🎯 TP3 HIT", True
+                intel = get_market_intel(symbol)
+                if not intel: continue
+                curr, roi = intel['price'], calculate_roi(entry, intel['price'], side)
+                is_fin, status = False, ""
+                if (side == "LONG" and curr <= sl) or (side == "SHORT" and curr >= sl): status, is_fin = "🛑 SL HIT", True
+                elif (side == "LONG" and curr >= tp3) or (side == "SHORT" and curr <= tp3): status, is_fin = "🎯 TP3 HIT", True
                 elif (side == "LONG" and curr >= tp2) or (side == "SHORT" and curr <= tp2):
-                    if not sig.get('tp2_n'): bot.send_message(CHAT_ID, f"✅ **T2 CORRIDOR BREACHED**\nAsset: #{symbol}\nROI: {roi:+.1f}%"); sig['tp2_n'] = True
+                    if not sig.get('tp2_n'): bot.send_message(CHAT_ID, f"✅ **T2 HIT** #{symbol} ROI: {roi:+.1f}%"); sig['tp2_n'] = True
                 elif (side == "LONG" and curr >= tp1) or (side == "SHORT" and curr <= tp1):
-                    if not sig.get('tp1_n'): bot.send_message(CHAT_ID, f"✅ **T1 CORRIDOR BREACHED**\nAsset: #{symbol}\nROI: {roi:+.1f}%"); sig['tp1_n'] = True
-                if is_finished:
+                    if not sig.get('tp1_n'): bot.send_message(CHAT_ID, f"✅ **T1 HIT** #{symbol} ROI: {roi:+.1f}%"); sig['tp1_n'] = True
+                if is_fin:
                     bot.send_message(CHAT_ID, f"{status} #{symbol} ROI: {roi:+.1f}%\nExit: {format_price(curr)}")
                     TRADE_HISTORY.append({"symbol": symbol, "roi": roi, "status": status, "timestamp": datetime.now(timezone.utc).isoformat()})
                     COOLDOWN_COINS[symbol] = datetime.now(timezone.utc) + timedelta(hours=4); ACTIVE_SIGNALS.remove(sig)
             time.sleep(60)
         except: time.sleep(60)
 
+def daily_report_scheduler():
+    global TRADE_HISTORY
+    while True:
+        now = datetime.now(timezone.utc)
+        if now.hour == 0 and now.minute == 0:
+            yesterday = now - timedelta(days=1)
+            trades = [t for t in TRADE_HISTORY if datetime.fromisoformat(t['timestamp']) > yesterday]
+            if trades:
+                total_roi, wr = sum([t['roi'] for t in trades]), (len([t for t in trades if t['roi'] > 0]) / len(trades)) * 100
+                bot.send_message(CHAT_ID, f"📊 **NEXUS DAILY QUANT REPORT**\nVectors: {len(trades)}\nWinRate: {wr:.1f}%\nROI: {total_roi:+.2f}%")
+            time.sleep(70)
+        time.sleep(30)
+
 def run_scanner():
     global COOLDOWN_COINS
-    res = call_binance_futures("/fapi/v1/ticker/24hr")
-    if not res: return
+    # Mengambil ticker dinamis dari Coinglass V4
+    res = call_coinglass_v4("/api/v1/futures/market/ticker", {"asset": "USDT"})
+    if not res or not res.get('data'): return
     now = datetime.now(timezone.utc); COOLDOWN_COINS = {k: v for k, v in COOLDOWN_COINS.items() if v > now}
-    valid = [c for c in res if c['symbol'].endswith("USDT") and c['symbol'] not in STABLE_COINS and float(c['quoteVolume']) > 15000000]
-    targets = sorted(valid, key=lambda x: float(x['priceChangePercent']), reverse=True)[:4] + sorted(valid, key=lambda x: float(x['priceChangePercent']))[:4]
-    for t in {v['symbol']:v for v in targets}.values():
-        if any(s.get('symbol') == t['symbol'] for s in ACTIVE_SIGNALS) or t['symbol'] in COOLDOWN_COINS: continue
+    
+    # Filter Gainer & Loser secara dinamis
+    valid = [c for c in res['data'] if c['symbol'].endswith("USDT") and c['symbol'].replace("USDT","") not in STABLE_COINS]
+    targets = sorted(valid, key=lambda x: float(x.get('priceChangePercent', 0)), reverse=True)[:4] + sorted(valid, key=lambda x: float(x.get('priceChangePercent', 0)))[:4]
+    
+    for t in targets:
+        symbol = t['symbol']
+        if any(s.get('symbol') == symbol for s in ACTIVE_SIGNALS) or symbol in COOLDOWN_COINS: continue
         sig = get_ai_analysis(t)
         if sig and sig != "SKIP" and sig.get('signal') in ['LONG', 'SHORT']: send_signal_ui(sig, CHAT_ID); time.sleep(15)
 
 if __name__ == "__main__":
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT, use_reloader=False), daemon=True).start()
     threading.Thread(target=monitor_active_signals, daemon=True).start()
+    threading.Thread(target=daily_report_scheduler, daemon=True).start()
     def scheduler():
         while True:
             run_scanner(); time.sleep(1800)
