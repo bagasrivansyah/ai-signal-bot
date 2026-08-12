@@ -679,7 +679,7 @@ if __name__ == "__main__":
     def scheduler():
         while True:
             run_scanner()
-            time.sleep(3600)
+            time.sleep(3700)
 
     threading.Thread(target=scheduler, daemon=True).start()
     bot.infinity_polling(skip_pending=True)
