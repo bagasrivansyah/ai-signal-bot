@@ -682,4 +682,5 @@ if __name__ == "__main__":
             time.sleep(3700)
 
     threading.Thread(target=scheduler, daemon=True).start()
+    bot.delete_webhook()
     bot.infinity_polling(skip_pending=True)
