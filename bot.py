@@ -500,7 +500,6 @@ def get_ai_analysis(coin_data):
     }}
     """
     try:
-            try:
         completion = client_groq.chat.completions.create(
             model=GROQ_MODEL,
             messages=[
@@ -510,8 +509,6 @@ def get_ai_analysis(coin_data):
             temperature=0.2, # Menurunkan suhu untuk menajamkan perhitungan logika SMC/ICT
             response_format={"type": "json_object"},
             timeout=30 # Sedikit dinaikkan untuk mengakomodasi model 120B
-        )
-        return json.loads(completion.choices[0].message.content)
         )
         return json.loads(completion.choices[0].message.content)
     except:
